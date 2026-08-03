@@ -1,5 +1,5 @@
 # Production compose for Portainer (no .env file needed).
-# Adjust the two paths below in the Portainer UI if your NAS mount differs.
+# NAS pool via mergerfs on the host.
 services:
   photo-sorter:
     build: .
@@ -7,9 +7,9 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - /mnt/nas/pool/photos/Unsorted:/photos:ro
+      - /srv/mergerfs/pool/pool/photos/Unsorted:/photos:ro
       - photo-data:/data
-      - /mnt/nas/pool/photos/Best:/export
+      - /srv/mergerfs/pool/pool/photos/Best:/export
     environment:
       PHOTOS_DIR: /photos
       DATA_DIR: /data
