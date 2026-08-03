@@ -11,7 +11,25 @@ from . import config
 from .db import db
 from .routes import router
 
-STATIC_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+_APP_FILE = Path(__file__).resolve()
+
+
+def _find_static_dir() -> Path | None:
+    """Locate the built SPA. Layout differs between the repo and the container:
+    - repo:      <project>/backend/app/main.py  -> <project>/frontend/dist
+    - container: /app/app/main.py               -> /app/frontend/dist
+    """
+    candidates = [
+        _APP_FILE.parent.parent.parent / "frontend" / "dist",
+        _APP_FILE.parent.parent / "frontend" / "dist",
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+STATIC_DIR = _find_static_dir()
 
 
 @asynccontextmanager
