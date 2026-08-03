@@ -12,6 +12,8 @@ services:
       - photo-data:/data
       - /srv/mergerfs/pool/pool/photos/Best:/export
     environment:
+      - PUID=1000
+      - PGID=100
       PHOTOS_DIR: /photos
       DATA_DIR: /data
       BEST_DIR: /export

@@ -27,7 +27,7 @@ COPY --from=frontend /build/dist ./frontend/dist
 
 # Non-root runtime user.
 RUN addgroup --system appuser && adduser --system --ingroup appuser appuser
-RUN mkdir -p /data && chown -R appuser:appuser /data
+RUN mkdir -p /data /photos /export && chown -R appuser:appuser /data /photos /export
 USER appuser
 
 EXPOSE 8080
