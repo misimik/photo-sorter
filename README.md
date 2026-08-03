@@ -20,7 +20,7 @@ All state lives in SQLite (WAL mode) under `/data` — every action is committed
 ```bash
 cp .env.example .env   # edit PHOTOS_DIR / BEST_DIR to your NAS mounts
 docker compose up --build
-# open http://localhost:8080
+# open http://localhost:8420
 ```
 
 `PHOTOS_DIR` is mounted **read-only** into the container. Thumbnails and the DB live in a named Docker volume (fast, avoids bind-mount overhead). Exports go to `BEST_DIR`.

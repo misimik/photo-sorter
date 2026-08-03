@@ -5,7 +5,7 @@ services:
     build: .
     image: photo-sorter:local
     ports:
-      - "8080:8080"
+      - "8420:8080"
     volumes:
       - /srv/mergerfs/pool/pool/photos/Unsorted:/photos:ro
       - photo-data:/data
