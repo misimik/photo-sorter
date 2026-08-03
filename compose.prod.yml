@@ -11,7 +11,6 @@ services:
       - /srv/mergerfs/pool/pool/photos/Unsorted:/photos:ro
       - photo-data:/data
       - /srv/mergerfs/pool/pool/photos/Best:/export
-    user: "1000:100"
     environment:
       PHOTOS_DIR: /photos
       DATA_DIR: /data
