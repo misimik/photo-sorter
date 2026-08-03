@@ -1,11 +1,12 @@
 # Production compose for Portainer (no .env file needed).
 # NAS pool via mergerfs on the host.
+version: "2.1"
 services:
   photo-sorter:
     build: .
     image: photo-sorter:local
     ports:
-      - "8420:8080"
+      - 8420:8080
     volumes:
       - /srv/mergerfs/pool/pool/photos/Unsorted:/photos:ro
       - photo-data:/data
