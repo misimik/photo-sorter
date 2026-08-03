@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+thumbnails/
+*.db
+*.db-wal
+*.db-shm
+node_modules/
+dist/
+.env
+.DS_Store
+*.tsbuildinfo
+$null
