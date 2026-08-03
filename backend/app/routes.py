@@ -101,7 +101,7 @@ async def events(request: Request):
                         "status": row.status,
                         "error": row.error,
                     }
-        yield ServerSentEvent(data=stages, event="progress")
+        yield ServerSentEvent(data={"stages": stages}, event="progress")
         await asyncio.sleep(1.0)
 
 
