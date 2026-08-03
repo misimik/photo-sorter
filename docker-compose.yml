@@ -3,11 +3,11 @@ services:
     build: .
     image: photo-sorter:local
     ports:
-      - "${PORT:-8080}:8080"
+      - "${PORT:-8420}:8080"
     volumes:
-      - ${PHOTOS_DIR}:/photos:ro
+      - ${PHOTOS_DIR:-/srv/mergerfs/pool/pool/photos/Unsorted}:/photos:ro
       - photo-data:/data
-      - ${BEST_DIR}:/export
+      - ${BEST_DIR:-/srv/mergerfs/pool/pool/photos/Best}:/export
     environment:
       PHOTOS_DIR: /photos
       DATA_DIR: /data
