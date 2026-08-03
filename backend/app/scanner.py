@@ -15,7 +15,7 @@ from sqlmodel import Session, delete, select
 from . import config
 from .db import Catalogue, Photo, PhotoGroup
 from .images import make_thumbnail, read_exif, thumbnail_sha1
-from .progress import set_done, set_running
+from .progress import get_progress, set_done, set_running
 
 
 def _is_photo(entry: os.DirEntry) -> bool:
@@ -29,9 +29,15 @@ def _stem(name: str) -> str:
     return name.rsplit(".", 1)[0] if "." in name else name
 
 
-def _walk(root: Path):
-    """Yield DirEntry objects for every photo file under root, depth-first."""
+def _walk(root: Path, on_found=None):
+    """Yield DirEntry objects for every photo file under root, depth-first.
+
+    `on_found` is called with the running count as files are discovered so the
+    caller can update progress during the enumeration (which can be slow on a
+    large or networked pool).
+    """
     stack = [root]
+    count = 0
     while stack:
         directory = stack.pop()
         try:
@@ -44,6 +50,9 @@ def _walk(root: Path):
                 if entry.is_dir(follow_symlinks=False):
                     stack.append(Path(entry.path))
                 elif _is_photo(entry):
+                    count += 1
+                    if on_found:
+                        on_found(count)
                     yield entry
             except OSError:
                 continue
@@ -125,10 +134,30 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanSta
     session.add(catalogue)
     session.commit()
 
-    entries = list(_walk(root))
+    # Report progress during the enumeration itself (can be slow on big pools).
+    set_running(session, "scan", 1_000_000)  # unknown total; show processed count
+    walked = 0
+
+    def on_found(count: int):
+        nonlocal walked
+        walked = count
+        if count % 50 == 0:
+            row = get_progress(session, "scan")
+            row.processed = count
+            session.add(row)
+            session.commit()
+
+    entries = list(_walk(root, on_found))
     total = len(entries)
     stats = ScanStats()
     stats.total = total
+
+    # Fix the running total now that the walk is done.
+    row = get_progress(session, "scan")
+    row.total = total
+    row.processed = 0
+    session.add(row)
+    session.commit()
 
     # Load existing photos keyed by (path, size, mtime) to detect changes.
     existing: dict[tuple[str, int, float], Photo] = {}

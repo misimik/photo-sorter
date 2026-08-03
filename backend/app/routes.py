@@ -27,36 +27,48 @@ def health():
 # Scan / progress
 # ---------------------------------------------------------------------------
 
+def _run_in_background(fn):
+    """Run a long job in its own thread so the API threadpool never blocks.
+
+    The job opens its own DB session (each thread needs one).
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def wrapper():
+        with next(get_db()) as session:
+            fn(session)
+
+    ThreadPoolExecutor(max_workers=1).submit(wrapper)
+    return {"status": "started"}
+
+
 @router.get("/scan")
 def scan_photos(session: Session = Depends(get_db)):
-    """Run an incremental scan synchronously (returns when done).
-
-    Progress is polled via SSE /api/events.
-    """
+    """Start an incremental scan in the background. Progress via /api/events."""
     root = config.PHOTOS_DIR
     if not root.exists():
         raise HTTPException(404, f"Photos dir {root} does not exist")
-    try:
-        stats = scanner.scan(session, root, config.THUMBNAIL_DIR)
-    except Exception as exc:
-        raise HTTPException(500, f"Scan failed: {exc}")
-    return {
-        "total": stats.total,
-        "new": stats.new,
-        "pairs": stats.pairs,
-    }
+
+    def job(s):
+        scanner.scan(s, root, config.THUMBNAIL_DIR)
+
+    return _run_in_background(job)
 
 
 @router.get("/analyze")
 def run_analyze(session: Session = Depends(get_db)):
-    analyze(session, config.THUMBNAIL_DIR)
-    return {"status": "ok"}
+    def job(s):
+        analyze(s, config.THUMBNAIL_DIR)
+
+    return _run_in_background(job)
 
 
 @router.get("/group")
 def run_group(session: Session = Depends(get_db)):
-    created = group(session)
-    return {"status": "ok", "groups": created}
+    def job(s):
+        group(s)
+
+    return _run_in_background(job)
 
 
 @router.get("/progress")
