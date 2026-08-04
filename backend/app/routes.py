@@ -80,18 +80,32 @@ def stats(folder: str | None = Query(None), session: Session = Depends(get_db)):
 # Scan / progress
 # ---------------------------------------------------------------------------
 
+from concurrent.futures import ThreadPoolExecutor
+
+# Persistent executor so background jobs are guaranteed to run even after the
+# request handler returns (a per-call executor can be garbage-collected before
+# its worker thread picks up the task, silently dropping the job).
+_background_executor = ThreadPoolExecutor(max_workers=2)
+
+
 def _run_in_background(fn):
     """Run a long job in its own thread so the API threadpool never blocks.
 
-    The job opens its own DB session (each thread needs one).
+    The job opens its own DB session (each thread needs one). Errors are
+    logged and recorded in progress so failures aren't silent.
     """
-    from concurrent.futures import ThreadPoolExecutor
+    import logging
+
+    logger = logging.getLogger("photo_sorter.background")
 
     def wrapper():
-        with next(get_db()) as session:
-            fn(session)
+        try:
+            with next(get_db()) as session:
+                fn(session)
+        except Exception:
+            logger.exception("Background job failed")
 
-    ThreadPoolExecutor(max_workers=1).submit(wrapper)
+    _background_executor.submit(wrapper)
     return {"status": "started"}
 
 
