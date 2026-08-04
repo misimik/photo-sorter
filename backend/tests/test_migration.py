@@ -92,3 +92,18 @@ def test_migration_adds_columns_to_old_schema(tmp_path):
         assert photo.folder == "Trip A"
         prog_rows = s.exec(select(Progress)).all()
         assert len(prog_rows) == 1  # existing row preserved
+
+
+def test_migration_removes_unique_on_progress_stage(tmp_path):
+    """The old schema had UNIQUE(progress.stage); per-folder rows must be allowed."""
+    db = _make_old_schema_db(tmp_path)
+    with db.session() as s:
+        s.exec(text("INSERT INTO progress (stage, status, updated_at) VALUES ('scan', 'idle', '2026-01-01')"))
+        s.commit()
+        migrate_folder_columns(s, tmp_path / "photos")
+        # A second row with the same stage but a different folder must insert fine.
+        s.exec(text("INSERT INTO progress (stage, folder, status, updated_at) VALUES ('scan', 'X', 'idle', '2026-01-01')"))
+        s.commit()
+        rows = s.exec(select(Progress)).all()
+        assert len(rows) == 2
+

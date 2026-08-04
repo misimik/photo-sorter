@@ -154,6 +154,54 @@ def _ensure_column(session: Session, table: str, column: str, ddl: str) -> None:
         session.commit()
 
 
+def _progress_has_unique_stage(session: Session) -> bool:
+    """True if the progress table still enforces UNIQUE on stage.
+
+    The pre-rework schema declared `stage VARCHAR NOT NULL UNIQUE`, which
+    SQLite implements as a table-level constraint (sqlite_autoindex_progress_1),
+    NOT a named index — so DROP INDEX doesn't remove it. Only a table rebuild
+    does.
+    """
+    from sqlalchemy import text
+
+    idx = session.exec(text("PRAGMA index_list(progress)")).all()
+    for row in idx:
+        name = row[1]
+        unique = row[2]
+        if unique and "autoindex" in name:
+            cols = session.exec(text(f"PRAGMA index_info({name})")).all()
+            if cols and cols[0][2] == "stage":
+                return True
+    return False
+
+
+def _rebuild_progress_without_unique(session: Session, photos_dir: Path) -> None:
+    """Rebuild the progress table without the UNIQUE(stage) constraint."""
+    from sqlalchemy import text
+
+    if not _progress_has_unique_stage(session):
+        return  # already migrated (new schema or prior rebuild)
+
+    session.exec(text(
+        "CREATE TABLE progress_new ("
+        "id INTEGER PRIMARY KEY,"
+        "stage VARCHAR NOT NULL,"
+        "folder VARCHAR DEFAULT '',"
+        "total INTEGER NOT NULL DEFAULT 0,"
+        "processed INTEGER NOT NULL DEFAULT 0,"
+        "status VARCHAR NOT NULL DEFAULT 'idle',"
+        "error VARCHAR,"
+        "updated_at DATETIME NOT NULL)"
+    ))
+    session.exec(text(
+        "INSERT INTO progress_new (id, stage, folder, total, processed, status, error, updated_at) "
+        "SELECT id, stage, folder, total, processed, status, error, updated_at FROM progress"
+    ))
+    session.exec(text("DROP TABLE progress"))
+    session.exec(text("ALTER TABLE progress_new RENAME TO progress"))
+    session.commit()
+
+
 def migrate_folder_columns(session: Session, photos_dir: Path) -> None:
     """Add the `folder` columns (if missing) and backfill them from paths.
 
@@ -166,13 +214,7 @@ def migrate_folder_columns(session: Session, photos_dir: Path) -> None:
     _ensure_column(session, "photo", "folder", "folder VARCHAR DEFAULT ''")
     _ensure_column(session, "photogroup", "folder", "folder VARCHAR DEFAULT ''")
     _ensure_column(session, "progress", "folder", "folder VARCHAR DEFAULT ''")
-    # The old schema had a UNIQUE constraint on progress.stage; drop it so
-    # multiple (stage, folder) rows can coexist.
-    try:
-        session.exec(text("DROP INDEX IF EXISTS ix_progress_stage"))
-        session.commit()
-    except Exception:
-        session.commit()  # index name may differ; non-fatal
+    _rebuild_progress_without_unique(session, photos_dir)
     session.commit()
 
     photos_dir = photos_dir.resolve()
