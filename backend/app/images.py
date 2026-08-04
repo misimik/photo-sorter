@@ -57,6 +57,18 @@ def make_thumbnail(path: Path, size: int = config.THUMB_SIZE, quality: int = con
         return buf.getvalue()
 
 
+def make_preview(path: Path, size: int = 1600, quality: int = 88) -> bytes:
+    """Create a preview-size JPEG (default 1600px long edge) for zooming."""
+    with Image.open(path) as im:
+        im = _apply_orientation(im)
+        im.thumbnail((size, size), Image.LANCZOS)
+        if im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=quality, optimize=True)
+        return buf.getvalue()
+
+
 def thumbnail_sha1(path: Path, size: int, mtime: float) -> str:
     """Content-addressed thumbnail key: (path, size, mtime)."""
     raw = f"{path}\0{size}\0{mtime}".encode()

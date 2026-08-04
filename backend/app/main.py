@@ -34,8 +34,13 @@ STATIC_DIR = _find_static_dir()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Ensure the DB schema + WAL mode are initialized on boot.
-    db.engine.connect().close()
+    # Ensure the DB schema + WAL mode are initialized on boot, then backfill
+    # the folder column from existing paths (idempotent; no-op once migrated).
+    from . import config
+    from .db import db, migrate_folder_columns
+
+    with db.session() as session:
+        migrate_folder_columns(session, config.PHOTOS_DIR)
     yield
 
 

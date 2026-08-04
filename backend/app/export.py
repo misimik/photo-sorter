@@ -31,14 +31,21 @@ def _manifest_rows(session: Session, photos: list[Photo]) -> list[str]:
     return lines
 
 
-def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path, photos_dir: Path) -> ExportJob:
-    """Copy the top `fraction` of photos to best_dir, write manifest atomically."""
+def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path, photos_dir: Path, folder: str | None = None) -> ExportJob:
+    """Copy the top `fraction` of photos (in `folder`) to Best/<folder>/, with manifest.
+
+    Output lands in `best_dir / folder` (or `best_dir` flat when folder is None),
+    preserving relative subpaths, so exports from different folders never collide.
+    """
     job.fraction = fraction
     job.status = "running"
     session.add(job)
     session.commit()
 
-    all_photos = session.exec(select(Photo).where(Photo.is_raw == False)).all()  # noqa: E712
+    query = select(Photo).where(Photo.is_raw == False)  # noqa: E712
+    if folder:
+        query = query.where(Photo.folder == folder)
+    all_photos = session.exec(query).all()
     ranked = sorted(all_photos, key=lambda p: p.elo, reverse=True)
     keep_count = max(1, int(len(ranked) * fraction))
     keep = ranked[:keep_count]
@@ -61,10 +68,14 @@ def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path
             unique.append(p)
 
     total = len(unique)
-    set_running(session, "export", total)
+    set_running(session, "export", total, folder=folder or "")
     job.total = total
     session.add(job)
     session.commit()
+
+    # Destination root: Best/<folder>/ preserving the relative layout.
+    dest_root = (best_dir / folder) if folder else best_dir
+    src_root = (photos_dir / folder) if folder else photos_dir
 
     errors: list[str] = []
     copied = 0
@@ -75,7 +86,8 @@ def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path
         except ValueError as exc:
             errors.append(str(exc))
             return False
-        dst = best_dir / os.path.basename(src)
+        rel = src.relative_to(src_root)
+        dst = dest_root / rel
         _copy_one(src, dst)
         return True
 
@@ -89,15 +101,16 @@ def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path
                 errors.append(str(exc))
 
     from .progress import get_progress
-    row = get_progress(session, "export")
+    row = get_progress(session, "export", folder=folder or "")
     row.processed += copied
     row.total = total
     session.add(row)
     session.commit()
 
     # Atomic manifest write.
-    manifest = best_dir / "manifest.txt"
-    tmp = best_dir / "manifest.txt.tmp"
+    manifest = dest_root / "manifest.txt"
+    tmp = dest_root / "manifest.txt.tmp"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
     tmp.write_text("\n".join(_manifest_rows(session, keep)) + "\n")
     os.replace(tmp, manifest)
 
@@ -106,10 +119,10 @@ def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path
     if errors:
         job.status = "error"
         job.error = "; ".join(errors[:5])
-        set_error(session, "export", job.error)
+        set_error(session, "export", job.error, folder=folder or "")
     else:
         job.status = "done"
-        set_done(session, "export")
+        set_done(session, "export", folder=folder or "")
     session.add(job)
     session.commit()
     return job

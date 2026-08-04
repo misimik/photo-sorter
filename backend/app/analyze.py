@@ -37,12 +37,16 @@ def _analyze_one(photo_id: int, sha1: str | None, thumb_dir) -> dict:
     return result
 
 
-def analyze(session: Session, thumb_dir) -> int:
-    """Compute hashes + sharpness for all non-raw photos missing them."""
-    photos = session.exec(
-        select(Photo).where(Photo.is_raw == False, Photo.analyzed == False)  # noqa: E712
-    ).all()
-    set_running(session, "analyze", len(photos))
+def analyze(session: Session, thumb_dir, folder: str | None = None) -> int:
+    """Compute hashes + sharpness for non-raw photos missing them.
+
+    When `folder` is given, only photos in that folder are analyzed.
+    """
+    query = select(Photo).where(Photo.is_raw == False, Photo.analyzed == False)  # noqa: E712
+    if folder:
+        query = query.where(Photo.folder == folder)
+    photos = session.exec(query).all()
+    set_running(session, "analyze", len(photos), folder=folder or "")
 
     jobs = [(p.id, p.sha1) for p in photos]
     results: dict[int, dict] = {}
@@ -69,7 +73,7 @@ def analyze(session: Session, thumb_dir) -> int:
     session.commit()
 
     from .progress import get_progress
-    row = get_progress(session, "analyze")
+    row = get_progress(session, "analyze", folder=folder or "")
     row.processed += done
     row.status = "done"
     session.add(row)
@@ -154,27 +158,36 @@ def _attach_singletons(ordered: list[Photo], groups: list[list[Photo]]) -> list[
     return result
 
 
-def group(session: Session) -> int:
-    """Regroup all analyzed photos into PhotoGroups (deterministic)."""
-    # Clear previous groups.
+def group(session: Session, folder: str | None = None) -> int:
+    """Regroup analyzed photos into PhotoGroups (deterministic).
+
+    When `folder` is given, only that folder's photos are regrouped and only
+    that folder's previous groups are cleared — other folders are untouched.
+    """
+    # Clear previous groups for this folder (or all, when folder is None).
     photos = session.exec(select(Photo)).all()
-    old_group_ids = {p.group_id for p in photos if p.group_id}
+    old_group_ids = {
+        p.group_id for p in photos
+        if p.group_id and (not folder or p.folder == folder)
+    }
     for gid in old_group_ids:
         g = session.get(PhotoGroup, gid)
         if g:
             session.delete(g)
     for p in photos:
-        p.group_id = None
+        if not folder or p.folder == folder:
+            p.group_id = None
     session.commit()
 
-    candidates = [p for p in photos if not p.is_raw and p.analyzed]
+    candidates = [p for p in photos if not p.is_raw and p.analyzed and (not folder or p.folder == folder)]
     clusters = cluster(candidates)
     clusters = _attach_singletons(sorted(candidates, key=_time_key), clusters)
-    set_running(session, "group", len(clusters))
+    set_running(session, "group", len(clusters), folder=folder or "")
 
     created = 0
     for cluster_list in clusters:
         pg = PhotoGroup(
+            folder=folder or "",
             start_time=min(_time_key(p) for p in cluster_list),
             end_time=max(_time_key(p) for p in cluster_list),
         )
@@ -185,7 +198,7 @@ def group(session: Session) -> int:
             p.group_id = pg.id
             session.add(p)
         created += 1
-        increment_processed(session, "group")
+        increment_processed(session, "group", folder=folder or "")
     session.commit()
-    set_done(session, "group")
+    set_done(session, "group", folder=folder or "")
     return created

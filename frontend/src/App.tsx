@@ -1,59 +1,78 @@
-import { useEffect, useState } from "react";
-import { api, subscribeProgress } from "./apiClient";
-import type { ProgressState } from "./api";
-import { StageOne } from "./stages/StageOne";
-import { StageTwo } from "./stages/StageTwo";
-import { StageThree } from "./stages/StageThree";
-import { StageFour } from "./stages/StageFour";
+import { useState, useEffect } from "react";
+import { getScanStatus } from "./api";
+import SetupPage from "./pages/Setup";
+import GroupReviewPage from "./pages/GroupReview";
+import TournamentPage from "./pages/Tournament";
+import RankingsPage from "./pages/Rankings";
 
-type Stage = 0 | 1 | 2 | 3 | 4;
+export type Page = "setup" | "review" | "tournament" | "rankings";
+
+function loadSavedFolder(): string {
+  try { return localStorage.getItem("selectedFolder") || ""; } catch { return ""; }
+}
 
 export default function App() {
-  const [stage, setStage] = useState<Stage>(0);
-  const [progress, setProgress] = useState<ProgressState | null>(null);
+  const [page, setPage] = useState<Page>("setup");
+  const [folder, setFolder] = useState<string>(loadSavedFolder());
 
-  useEffect(() => subscribeProgress(setProgress), []);
-
-  // Derive the current stage from persisted progress so a refresh resumes.
-  useEffect(() => {
-    if (progress) {
-      const { scan, analyze, group } = progress.stages;
-      if (scan.status !== "done") setStage(0);
-      else if (analyze.status !== "done") setStage(1);
-      else if (group.status !== "done") setStage(2);
-      else setStage(3);
-    }
-  }, [progress]);
-
-  const runStage = async (action: () => Promise<unknown>, target: Stage) => {
-    await action();
-    setStage(target);
+  const selectFolder = (f: string) => {
+    setFolder(f);
+    try { localStorage.setItem("selectedFolder", f); } catch { /* ignore */ }
   };
 
-  return (
-    <div className="h-screen w-screen overflow-hidden bg-neutral-950 text-neutral-100 flex flex-col">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-neutral-800 text-sm">
-        <span className="font-semibold tracking-wide">PHOTO SORTER</span>
-        <nav className="flex gap-2">
-          {(["Stage 1: Scan", "Stage 2: Review", "Stage 3: Tournament", "Stage 4: Export"] as const).map(
-            (label, i) => (
-              <button
-                key={label}
-                className={`px-2 py-1 rounded ${stage === i ? "bg-neutral-700" : "hover:bg-neutral-800"}`}
-                onClick={() => setStage(i as Stage)}
-              >
-                {label}
-              </button>
-            )
-          )}
-        </nav>
-      </header>
+  useEffect(() => {
+    getScanStatus(folder).then((s) => {
+      if (s.status === "done") setPage("review");
+    }).catch(() => {});
+  }, [folder]);
 
-      <main className="flex-1 min-h-0">
-        {stage === 0 && <StageOne onRunScan={() => runStage(() => api.scan(), 0)} onRunAnalyze={() => runStage(() => api.analyze(), 1)} onRunGroup={() => runStage(() => api.group(), 2)} progress={progress} />}
-        {stage === 1 && <StageTwo onNext={() => setStage(2)} />}
-        {stage === 2 && <StageThree onNext={() => setStage(3)} />}
-        {stage === 3 && <StageFour />}
+  return (
+    <div style={{ height: "100vh", background: "#111", color: "#eee", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <nav style={{
+        padding: "8px 16px",
+        background: "#1a1a1a",
+        borderBottom: "1px solid #333",
+        display: "flex",
+        gap: "16px",
+        alignItems: "center",
+        flexShrink: 0,
+      }}>
+        <h1 style={{ margin: 0, fontSize: "16px", fontWeight: 600, marginRight: "auto" }}>
+          Photo Sorter
+        </h1>
+        {folder && (
+          <span style={{ color: "#888", fontSize: "13px", background: "#2a2a3e", padding: "4px 10px", borderRadius: "4px" }}>
+            📁 {folder}
+          </span>
+        )}
+        {(["setup", "review", "tournament", "rankings"] as Page[]).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPage(p)}
+            style={{
+              background: page === p ? "#444" : "transparent",
+              color: page === p ? "#fff" : "#999",
+              border: "none",
+              padding: "6px 12px",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontSize: "13px",
+              textTransform: "capitalize",
+            }}
+          >
+            {p === "setup" ? "Home" : p}
+          </button>
+        ))}
+      </nav>
+      <main style={{ flex: 1, overflow: "auto", padding: "8px" }}>
+        {page === "setup" && (
+          <SetupPage folder={folder} onSelectFolder={selectFolder} onNavigate={(p: string) => setPage(p as Page)} />
+        )}
+        {page === "review" && (
+          <GroupReviewPage folder={folder} onNavigate={(p: string) => setPage(p as Page)} />
+        )}
+        {page === "tournament" && <TournamentPage folder={folder} />}
+        {page === "rankings" && <RankingsPage folder={folder} />}
       </main>
     </div>
   );

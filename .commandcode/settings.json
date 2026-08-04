@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(curl -s -i http://192.168.0.31:8420/api/health)",
+      "Shell(dir:*)",
+      "Shell(findstr:*)",
+      "Shell(git:*)",
+      "Shell(curl -s -i http://192.168.0.31:8420/api/scan)",
+      "Shell(curl -s http://192.168.0.31:8420/api/progress)",
+      "Shell(curl -s \"http://192.168.0.31:8420/api/photos?limit=3\")",
+      "Shell(curl -s -m 10 http://192.168.0.31:8420/api/health -w \"\\nHTTP:%{http_code} TIME:%{time_total}s\\n\")",
+      "Shell(curl -s -m 10 http://192.168.0.31:8420/api/progress)",
+      "Shell(.venvScriptspython:*)",
+      "Shell(del /q frontend\\src\\stages\\StageOne.tsx frontend\\src\\stages\\StageTwo.tsx frontend\\src\\stages\\StageThree.tsx frontend\\src\\stages\\StageFour.tsx 2>nul & rmdir /s /q frontend\\src\\stages 2>nul & echo cleaned)",
+      "Shell(npm:*)",
+      "Shell(del:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

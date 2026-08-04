@@ -43,6 +43,7 @@ class Photo(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     catalogue_id: int = Field(foreign_key="catalogue.id", index=True)
     path: str = Field(index=True)
+    folder: str = Field(index=True, default="")
     stem: str = Field(index=True)
     ext: str = Field(index=True)
     size: int = 0
@@ -78,6 +79,7 @@ class Photo(SQLModel, table=True):
 
 class PhotoGroup(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
+    folder: str = Field(index=True, default="")
     start_time: datetime | None = None
     end_time: datetime | None = None
 
@@ -105,14 +107,15 @@ class ExportJob(SQLModel, table=True):
 
 
 class Progress(SQLModel, table=True):
-    """Persisted progress counters for each pipeline stage.
+    """Persisted progress counters for each pipeline stage + folder.
 
     Acts as the source of truth so progress survives browser refreshes and
-    container restarts.
+    container restarts. One row per (stage, folder) pair; folder "" = global.
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    stage: str = Field(index=True, unique=True)  # scan | analyze | group | export
+    stage: str = Field(index=True)  # scan | analyze | group | export
+    folder: str = Field(index=True, default="")
     total: int = 0
     processed: int = 0
     status: str = "idle"  # idle | running | done | error
@@ -138,6 +141,36 @@ class Database:
 
     def session(self) -> Session:
         return Session(self._engine)
+
+
+def migrate_folder_columns(session: Session, photos_dir: Path) -> None:
+    """Backfill the `folder` column on Photo/PhotoGroup from existing paths.
+
+    Idempotent: only touches rows whose folder is still empty. Safe to run at
+    every boot; it becomes a no-op once the DB is migrated.
+    """
+    from sqlmodel import select
+
+    photos_dir = photos_dir.resolve()
+
+    photos = session.exec(select(Photo).where(Photo.folder == "")).all()
+    for p in photos:
+        try:
+            rel = Path(p.path).resolve().relative_to(photos_dir)
+            p.folder = rel.parts[0] if rel.parts else ""
+        except ValueError:
+            p.folder = ""  # path outside photos dir; leave as global
+        session.add(p)
+    if photos:
+        session.commit()
+
+    groups = session.exec(select(PhotoGroup).where(PhotoGroup.folder == "")).all()
+    for g in groups:
+        member = session.exec(select(Photo).where(Photo.group_id == g.id)).first()
+        g.folder = member.folder if member else ""
+        session.add(g)
+    if groups:
+        session.commit()
 
 
 # Module-level default database (overridden in tests).

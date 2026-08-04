@@ -44,49 +44,58 @@ def resolve_match(session: Session, winner: Photo, loser: Photo) -> TournamentMa
     )
     session.add_all([winner, loser, match])
     session.commit()
-    increment_processed(session, "tournament")
+    folder = winner.folder or ""
+    increment_processed(session, "tournament", folder=folder)
     return match
 
 
-def _rated_photo(session: Session, exclude_ids: set[int]) -> Photo | None:
-    photos = session.exec(
-        select(Photo).where(
-            Photo.rating >= 1,
-            Photo.views < config.MAX_VIEWS,
-        )
-    ).all()
+def _folder_filter(query, folder: str | None):
+    return query if not folder else query.where(Photo.folder == folder)
+
+
+def _rated_photo(session: Session, folder: str | None, exclude_ids: set[int], min_stars: int = 1) -> Photo | None:
+    query = select(Photo).where(
+        Photo.rating >= min_stars,
+        Photo.views < config.MAX_VIEWS,
+    )
+    query = _folder_filter(query, folder)
+    photos = session.exec(query).all()
     remaining = [p for p in photos if p.id not in exclude_ids and not p.rejected]
     if not remaining:
         return None
     return random.choice(remaining)
 
 
-def next_pair(session: Session) -> tuple[Photo, Photo] | None:
-    """Pick two rated photos that haven't maxed out their views."""
-    a = _rated_photo(session, set())
+def next_pair(session: Session, folder: str | None = None, min_stars: int = 1) -> tuple[Photo, Photo] | None:
+    """Pick two rated photos (in `folder`) that haven't maxed their views."""
+    a = _rated_photo(session, folder, set(), min_stars)
     if a is None:
         return None
-    b = _rated_photo(session, {a.id})
+    b = _rated_photo(session, folder, {a.id}, min_stars)
     if b is None:
         return None
     return (a, b)
 
 
-def start_tournament(session: Session) -> int:
-    """Seed ELO for all rated photos; return the total number of votes."""
-    photos = session.exec(select(Photo).where(Photo.rating >= 1)).all()
+def start_tournament(session: Session, folder: str | None = None, min_stars: int = 1) -> int:
+    """Seed ELO for rated photos (in `folder`, >= `min_stars` stars); return total votes."""
+    query = select(Photo).where(Photo.rating >= min_stars)
+    query = _folder_filter(query, folder)
+    photos = session.exec(query).all()
     for p in photos:
         p.elo = seed_elo(p)
         p.views = 0
         session.add(p)
     session.commit()
     total = len(photos) * config.MAX_VIEWS
-    set_running(session, "tournament", total)
+    set_running(session, "tournament", total, folder=folder or "")
     return total
 
 
-def tournament_state(session: Session) -> dict:
-    rated = session.exec(select(Photo).where(Photo.rating >= 1)).all()
+def tournament_state(session: Session, folder: str | None = None, min_stars: int = 1) -> dict:
+    query = select(Photo).where(Photo.rating >= min_stars)
+    query = _folder_filter(query, folder)
+    rated = session.exec(query).all()
     total_votes = len(rated) * config.MAX_VIEWS
     votes_done = sum(p.views for p in rated)
     return {

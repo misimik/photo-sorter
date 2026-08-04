@@ -116,8 +116,12 @@ def _insert_photo(session: Session, catalogue: Catalogue, rec: dict) -> Photo:
     return photo
 
 
-def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanStats:
-    """Run an incremental scan of `root`. Returns aggregate stats."""
+def scan(session: Session, root: Path, thumb_dir: Path | None = None, folder: str = "") -> ScanStats:
+    """Run an incremental scan of `root`. Returns aggregate stats.
+
+    When `folder` is given (a top-level folder name), the scan is scoped to
+    `root` (typically PHOTOS_DIR / folder) and all photos are tagged with it.
+    """
     root = root.resolve()
     thumb_dir = thumb_dir or config.THUMBNAIL_DIR
     thumb_dir.mkdir(parents=True, exist_ok=True)
@@ -135,14 +139,14 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanSta
     session.commit()
 
     # Report progress during the enumeration itself (can be slow on big pools).
-    set_running(session, "scan", 1_000_000)  # unknown total; show processed count
+    set_running(session, "scan", 1_000_000, folder=folder)  # unknown total; show processed count
     walked = 0
 
     def on_found(count: int):
         nonlocal walked
         walked = count
         if count % 50 == 0:
-            row = get_progress(session, "scan")
+            row = get_progress(session, "scan", folder=folder)
             row.processed = count
             session.add(row)
             session.commit()
@@ -153,7 +157,7 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanSta
     stats.total = total
 
     # Fix the running total now that the walk is done.
-    row = get_progress(session, "scan")
+    row = get_progress(session, "scan", folder=folder)
     row.total = total
     row.processed = 0
     session.add(row)
@@ -164,9 +168,13 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanSta
     for photo in session.exec(select(Photo).where(Photo.catalogue_id == catalogue.id)):
         existing[(photo.path, photo.size, photo.mtime)] = photo
 
-    # Stale photos: present in DB but no longer on disk → delete.
+    # Stale photos: present in DB but no longer on disk → delete. Scoped to the
+    # scanned folder so re-scanning one folder never touches others.
     disk_paths = {e.path for e in entries}
-    stale = [p for p in existing.values() if p.path not in disk_paths]
+    stale = [
+        p for p in existing.values()
+        if p.path not in disk_paths and (not folder or p.folder == folder)
+    ]
     for photo in stale:
         session.delete(photo)
     if stale:
@@ -180,13 +188,15 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanSta
             continue
         key = (rec["path"], rec["size"], rec["mtime"])
         if key not in existing_keys:
+            if folder:
+                rec["folder"] = folder
             new_recs.append(rec)
         else:
             stats.total -= 1  # unchanged; not part of "total to process"
     session.commit()
 
     # Save new photos in batches.
-    set_running(session, "scan", total)
+    set_running(session, "scan", total, folder=folder)
     for i, rec in enumerate(new_recs, start=1):
         _insert_photo(session, catalogue, rec)
         if i % 100 == 0:
@@ -194,7 +204,7 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanSta
     session.commit()
     stats.new = len(new_recs)
 
-    # Pair JPG/RAW by stem.
+    # Pair JPG/RAW by stem (within this catalogue only).
     photos = session.exec(select(Photo).where(Photo.catalogue_id == catalogue.id)).all()
     by_stem: dict[str, list[Photo]] = {}
     for p in photos:
@@ -219,5 +229,5 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None) -> ScanSta
     session.add(catalogue)
     session.commit()
 
-    set_done(session, "scan")
+    set_done(session, "scan", folder=folder)
     return stats
