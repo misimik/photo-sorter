@@ -107,3 +107,38 @@ def test_migration_removes_unique_on_progress_stage(tmp_path):
         rows = s.exec(select(Progress)).all()
         assert len(rows) == 2
 
+
+def test_migration_handles_db_that_went_through_old_migration(tmp_path):
+    """A DB that already got the folder column via the buggy old migration still
+    carries the UNIQUE(stage) autoindex; the rebuild must still remove it."""
+    import sqlite3
+
+    db_path = tmp_path / "old-migrated.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE progress (
+            id INTEGER PRIMARY KEY,
+            stage VARCHAR NOT NULL UNIQUE,
+            folder VARCHAR DEFAULT '',
+            total INTEGER NOT NULL DEFAULT 0,
+            processed INTEGER NOT NULL DEFAULT 0,
+            status VARCHAR NOT NULL DEFAULT 'idle',
+            error VARCHAR,
+            updated_at DATETIME NOT NULL
+        );
+        """
+    )
+    conn.close()
+
+    db = Database(db_path)
+    with db.session() as s:
+        s.exec(text("INSERT INTO progress (stage, status, updated_at) VALUES ('scan', 'idle', '2026-01-01')"))
+        s.commit()
+        migrate_folder_columns(s, tmp_path / "photos")
+        s.exec(text("INSERT INTO progress (stage, folder, status, updated_at) VALUES ('scan', 'Y', 'idle', '2026-01-01')"))
+        s.commit()
+        rows = s.exec(select(Progress)).all()
+        assert len(rows) == 2
+
+

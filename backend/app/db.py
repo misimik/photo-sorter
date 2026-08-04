@@ -157,10 +157,9 @@ def _ensure_column(session: Session, table: str, column: str, ddl: str) -> None:
 def _progress_has_unique_stage(session: Session) -> bool:
     """True if the progress table still enforces UNIQUE on stage.
 
-    The pre-rework schema declared `stage VARCHAR NOT NULL UNIQUE`, which
-    SQLite implements as a table-level constraint (sqlite_autoindex_progress_1),
-    NOT a named index — so DROP INDEX doesn't remove it. Only a table rebuild
-    does.
+    Both forms are detected: SQLModel's named unique index (ix_progress_stage)
+    and the old schema's table-level UNIQUE constraint (sqlite_autoindex).
+    Either one blocks per-folder progress rows, so either triggers a rebuild.
     """
     from sqlalchemy import text
 
@@ -168,7 +167,7 @@ def _progress_has_unique_stage(session: Session) -> bool:
     for row in idx:
         name = row[1]
         unique = row[2]
-        if unique and "autoindex" in name:
+        if unique:
             cols = session.exec(text(f"PRAGMA index_info({name})")).all()
             if cols and cols[0][2] == "stage":
                 return True
