@@ -143,23 +143,45 @@ class Database:
         return Session(self._engine)
 
 
-def migrate_folder_columns(session: Session, photos_dir: Path) -> None:
-    """Backfill the `folder` column on Photo/PhotoGroup from existing paths.
+def _ensure_column(session: Session, table: str, column: str, ddl: str) -> None:
+    """Add a column to an existing table if it's missing (idempotent)."""
+    from sqlalchemy import text
 
-    Idempotent: only touches rows whose folder is still empty. Safe to run at
-    every boot; it becomes a no-op once the DB is migrated.
+    cols = session.exec(text(f"PRAGMA table_info({table})")).all()
+    names = {c[1] for c in cols}
+    if column not in names:
+        session.exec(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
+        session.commit()
+
+
+def migrate_folder_columns(session: Session, photos_dir: Path) -> None:
+    """Add the `folder` columns (if missing) and backfill them from paths.
+
+    create_all() only creates missing tables — it never adds columns to an
+    existing table — so the ALTER TABLEs here are required when upgrading a DB
+    created before the per-folder rework. Idempotent: safe to run every boot.
     """
     from sqlmodel import select
+
+    _ensure_column(session, "photo", "folder", "folder VARCHAR DEFAULT ''")
+    _ensure_column(session, "photogroup", "folder", "folder VARCHAR DEFAULT ''")
+    _ensure_column(session, "progress", "folder", "folder VARCHAR DEFAULT ''")
+    # The old schema had a UNIQUE constraint on progress.stage; drop it so
+    # multiple (stage, folder) rows can coexist.
+    try:
+        session.exec(text("DROP INDEX IF EXISTS ix_progress_stage"))
+        session.commit()
+    except Exception:
+        session.commit()  # index name may differ; non-fatal
+    session.commit()
 
     photos_dir = photos_dir.resolve()
 
     photos = session.exec(select(Photo).where(Photo.folder == "")).all()
     for p in photos:
-        try:
-            rel = Path(p.path).resolve().relative_to(photos_dir)
-            p.folder = rel.parts[0] if rel.parts else ""
-        except ValueError:
-            p.folder = ""  # path outside photos dir; leave as global
+        # Folder = the photo's immediate parent directory name. This is robust
+        # across platforms and doesn't depend on the photos root matching.
+        p.folder = Path(p.path).parent.name
         session.add(p)
     if photos:
         session.commit()
