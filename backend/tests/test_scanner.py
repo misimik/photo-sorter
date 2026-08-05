@@ -87,6 +87,28 @@ def test_folder_scan_reuses_parent_catalogue_no_duplicates(db, photos_dir, tmp_p
         assert photos[0].folder == "Trip"
 
 
+def test_rescan_updates_sha1_when_thumbnail_key_changes(db, photos_dir, tmp_path):
+    """If the thumbnail key changes (e.g. THUMB_SIZE bump), re-scanning an
+    unchanged photo must update its stored sha1 so the endpoint serves the new
+    thumbnail."""
+    make_jpg(photos_dir / "x.jpg")
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    with db.session() as s:
+        scanner.scan(s, photos_dir, thumb_dir)
+        photo = s.exec(scanner.select(Photo)).one()
+        old_sha1 = photo.sha1
+        # Simulate a thumbnail-size change: force the recomputed sha1 to differ.
+        photo.sha1 = "old-and-stale"
+        s.commit()
+        scanner.scan(s, photos_dir, thumb_dir)
+        photo = s.exec(scanner.select(Photo)).one()
+        assert photo.sha1 != "old-and-stale"
+        assert photo.sha1 == old_sha1
+
+
+
 
 
 def test_scan_idempotent_second_run(db, photos_dir, tmp_path):

@@ -203,11 +203,14 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None, folder: st
             new_recs.append(rec)
         else:
             stats.total -= 1  # unchanged; not part of "total to process"
-            if folder:
-                # Backfill the folder tag on photos already in the catalogue
-                # (e.g. scanned by an earlier full-tree run with folder="").
-                existing_photo = existing.get(key)
-                if existing_photo and existing_photo.folder != folder:
+            existing_photo = existing.get(key)
+            if existing_photo:
+                # If the thumbnail key changed (e.g. thumbnail size config
+                # changed), update it so the endpoint serves the new file.
+                if rec.get("sha1") and existing_photo.sha1 != rec["sha1"]:
+                    existing_photo.sha1 = rec["sha1"]
+                    session.add(existing_photo)
+                if folder and existing_photo.folder != folder:
                     existing_photo.folder = folder
                     session.add(existing_photo)
     session.commit()
