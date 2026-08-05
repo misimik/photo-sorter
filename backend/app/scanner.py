@@ -205,14 +205,26 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None, folder: st
             stats.total -= 1  # unchanged; not part of "total to process"
             existing_photo = existing.get(key)
             if existing_photo:
+                from sqlalchemy import update as sa_update
+
                 # If the thumbnail key changed (e.g. thumbnail size config
                 # changed), update it so the endpoint serves the new file.
+                # Use a direct UPDATE (not ORM dirty-tracking) so it reliably
+                # persists even if the loaded object is stale.
                 if rec.get("sha1") and existing_photo.sha1 != rec["sha1"]:
-                    existing_photo.sha1 = rec["sha1"]
-                    session.add(existing_photo)
+                    session.exec(
+                        sa_update(Photo)
+                        .where(Photo.id == existing_photo.id)
+                        .values(sha1=rec["sha1"])
+                    )
+                    session.expire(existing_photo)
                 if folder and existing_photo.folder != folder:
-                    existing_photo.folder = folder
-                    session.add(existing_photo)
+                    session.exec(
+                        sa_update(Photo)
+                        .where(Photo.id == existing_photo.id)
+                        .values(folder=folder)
+                    )
+                    session.expire(existing_photo)
     session.commit()
 
     # Save new photos in batches.
