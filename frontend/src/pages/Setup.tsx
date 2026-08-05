@@ -10,9 +10,6 @@ interface Props {
 
 export default function SetupPage({ folder, onSelectFolder, onNavigate }: Props) {
   const [stats, setStats] = useState<{ total_photos: number; total_groups: number; rated: number } | null>(null);
-  const [scanning, setScanning] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [grouping, setGrouping] = useState(false);
   const [folders, setFolders] = useState<string[]>([]);
   const [progress, setProgress] = useState<ProgressState | null>(null);
 
@@ -43,18 +40,19 @@ export default function SetupPage({ folder, onSelectFolder, onNavigate }: Props)
   const grp = stageFor("group");
 
   async function handleScan() {
-    setScanning(true);
     await startScan(folder || undefined);
   }
   async function handleAnalyze() {
-    setAnalyzing(true);
     await startAnalyze(folder || undefined);
   }
   async function handleGroup() {
-    setGrouping(true);
     await startGroup(folder || undefined);
   }
 
+  // Derive running state from actual progress (SSE), not manual flags.
+  const scanning = scan.status === "running";
+  const analyzing = analyze.status === "running";
+  const grouping = grp.status === "running";
   const ready = scan.status === "done";
 
   function Bar({ label, data, color }: { label: string; data: { total: number; processed: number; status: string }; color: string }) {
