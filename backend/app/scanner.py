@@ -98,7 +98,7 @@ def _process_entry(entry: os.DirEntry, thumb_dir: Path) -> tuple[dict | None, in
         exif = read_exif(path)
         rec["exif_datetime"] = exif.get("datetime")
         rec["orientation"] = exif.get("orientation")
-        sha1 = thumbnail_sha1(path, size, mtime)
+        sha1 = thumbnail_sha1(path, size, mtime, config.THUMB_SIZE)
         thumb_path = thumb_dir / f"{sha1}.jpg"
         if not thumb_path.exists():
             try:

@@ -69,9 +69,13 @@ def make_preview(path: Path, size: int = 1600, quality: int = 88) -> bytes:
         return buf.getvalue()
 
 
-def thumbnail_sha1(path: Path, size: int, mtime: float) -> str:
-    """Content-addressed thumbnail key: (path, size, mtime)."""
-    raw = f"{path}\0{size}\0{mtime}".encode()
+def thumbnail_sha1(path: Path, size: int, mtime: float, thumb_size: int = 0) -> str:
+    """Content-addressed thumbnail key: (path, size, mtime, thumb_size).
+
+    `thumb_size` is the generated thumbnail's long edge (config.THUMB_SIZE) so
+    changing the thumbnail size produces a new key and regenerates thumbnails.
+    """
+    raw = f"{path}\0{size}\0{mtime}\0{thumb_size}".encode()
     return hashlib.sha1(raw).hexdigest()
 
 
