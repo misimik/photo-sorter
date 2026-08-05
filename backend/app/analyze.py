@@ -165,18 +165,23 @@ def group(session: Session, folder: str | None = None) -> int:
     that folder's previous groups are cleared — other folders are untouched.
     """
     # Clear previous groups for this folder (or all, when folder is None).
+    # Null out group_id on ALL photos that reference the groups being removed
+    # BEFORE deleting them — SQLite foreign_keys=ON forbids deleting a group
+    # that photos still point at.
     photos = session.exec(select(Photo)).all()
     old_group_ids = {
         p.group_id for p in photos
         if p.group_id and (not folder or p.folder == folder)
     }
+    for p in photos:
+        if p.group_id in old_group_ids:
+            p.group_id = None
+            session.add(p)
+    session.commit()
     for gid in old_group_ids:
         g = session.get(PhotoGroup, gid)
         if g:
             session.delete(g)
-    for p in photos:
-        if not folder or p.folder == folder:
-            p.group_id = None
     session.commit()
 
     candidates = [p for p in photos if not p.is_raw and p.analyzed and (not folder or p.folder == folder)]

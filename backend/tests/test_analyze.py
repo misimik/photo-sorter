@@ -69,3 +69,24 @@ def test_group_creates_photo_groups(db, photos_dir, tmp_path):
         assert created >= 1
         for p in s.exec(select(Photo)).all():
             assert p.group_id is not None
+
+
+def test_group_regroup_does_not_violate_fk(db, photos_dir, tmp_path):
+    """Re-running group() must null out group_id before deleting old groups,
+    or SQLite foreign_keys=ON raises IntegrityError."""
+    from app import scanner
+
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    make_jpg(photos_dir / "a.jpg", color=(50, 50, 50))
+    make_jpg(photos_dir / "b.jpg", color=(60, 60, 60))
+    with db.session() as s:
+        scanner.scan(s, photos_dir, thumb_dir)
+        analyze(s, thumb_dir)
+        first = group(s)
+        assert first >= 1
+        # Re-group: must not fail deleting the old PhotoGroups.
+        second = group(s)
+        assert second >= 1
+        for p in s.exec(select(Photo)).all():
+            assert p.group_id is not None
