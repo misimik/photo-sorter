@@ -28,7 +28,8 @@ export default function GroupReviewPage({ folder, onNavigate }: { folder: string
     const clamped = Math.max(0, Math.min(groups.length - 1, idx));
     localStorage.setItem("reviewGroupIdx", String(clamped));
     setCurrentGroupIdx(clamped);
-  }, [groups.length, flush]);
+    setGroup(groups[clamped] ?? null);  // update the displayed photos too
+  }, [groups, flush]);
 
   useEffect(() => {
     getGroups(folder || undefined).then((gs) => {

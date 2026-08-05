@@ -13,8 +13,8 @@ BEST_DIR = Path(os.environ.get("BEST_DIR", "/export"))
 PORT = int(os.environ.get("PORT", "8080"))
 
 # Image pipeline
-THUMB_SIZE = 256
-JPEG_QUALITY = 82
+THUMB_SIZE = 512  # 512px so review thumbnails are sharp enough to judge
+JPEG_QUALITY = 85
 
 # Sharpness (Laplacian variance on 256px thumbnail)
 SHARPNESS_PERCENTILE = 10.0

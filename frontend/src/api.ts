@@ -153,7 +153,8 @@ export async function getStats(folder?: string): Promise<{
 
 export async function getGroups(folder?: string): Promise<Group[]> {
   const q = folder ? `?folder=${encodeURIComponent(folder)}` : "";
-  return req<Group[]>(`/groups${q}`);
+  // Fetch all groups (limit=5000); the review flow needs the full list.
+  return req<Group[]>(`/groups${q}${folder ? "&" : "?"}limit=5000`);
 }
 
 export async function getGroup(id: number): Promise<GroupDetail> {

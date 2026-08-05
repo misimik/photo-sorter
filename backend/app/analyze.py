@@ -146,16 +146,33 @@ def cluster(photos: list[Photo]) -> list[list[Photo]]:
 
 
 def _attach_singletons(ordered: list[Photo], groups: list[list[Photo]]) -> list[list[Photo]]:
-    """Merge groups of size 1 into the chronologically nearest group."""
-    result = [g for g in groups if len(g) > 1]
+    """Merge singletons into the chronologically nearest group.
+
+    To keep review context at ~TARGET_GROUP_SIZE, singles are attached to the
+    nearest group that still has room, preferring groups with more members.
+    """
+    if not groups:
+        return groups
+    # Sort groups chronologically by their first member.
+    grouped = [g for g in groups if len(g) > 1]
     singles = [g[0] for g in groups if len(g) == 1]
+
     for s in singles:
-        if not result:
-            result.append([s])
+        if not grouped:
+            grouped.append([s])
             continue
-        best = min(result, key=lambda g: abs(_time_key(g[0]).timestamp() - _time_key(s).timestamp()))
+        # Nearest group with room under the target size; else nearest any.
+        best_roomy = min(
+            (g for g in grouped if len(g) < config.TARGET_GROUP_SIZE),
+            key=lambda g: abs(_time_key(g[0]).timestamp() - _time_key(s).timestamp()),
+            default=None,
+        )
+        best = best_roomy or min(
+            grouped,
+            key=lambda g: abs(_time_key(g[0]).timestamp() - _time_key(s).timestamp()),
+        )
         best.append(s)
-    return result
+    return grouped
 
 
 def group(session: Session, folder: str | None = None) -> int:
