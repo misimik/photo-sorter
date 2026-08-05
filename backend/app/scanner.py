@@ -127,6 +127,16 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None, folder: st
     thumb_dir.mkdir(parents=True, exist_ok=True)
 
     catalogue = session.exec(select(Catalogue).where(Catalogue.path == str(root))).first()
+    if catalogue is None and folder:
+        # Folder-scoped scan: reuse the parent catalogue (e.g. the full-tree
+        # scan rooted at /photos) so the same paths aren't inserted twice.
+        parent = session.exec(
+            select(Catalogue).where(
+                Catalogue.path != str(root),
+                Catalogue.path.startswith(str(root.parent)),
+            )
+        ).first()
+        catalogue = parent
     if catalogue is None:
         catalogue = Catalogue(path=str(root), state="scanning")
         session.add(catalogue)
@@ -193,6 +203,13 @@ def scan(session: Session, root: Path, thumb_dir: Path | None = None, folder: st
             new_recs.append(rec)
         else:
             stats.total -= 1  # unchanged; not part of "total to process"
+            if folder:
+                # Backfill the folder tag on photos already in the catalogue
+                # (e.g. scanned by an earlier full-tree run with folder="").
+                existing_photo = existing.get(key)
+                if existing_photo and existing_photo.folder != folder:
+                    existing_photo.folder = folder
+                    session.add(existing_photo)
     session.commit()
 
     # Save new photos in batches.

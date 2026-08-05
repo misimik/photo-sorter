@@ -66,6 +66,28 @@ def test_scan_folder_scoped_does_not_touch_other_folders(db, photos_dir, tmp_pat
         assert len(photos) == 2
 
 
+def test_folder_scan_reuses_parent_catalogue_no_duplicates(db, photos_dir, tmp_path):
+    """Scanning a folder that's already in the full-tree catalogue must not
+    insert duplicate rows for the same path."""
+    sub = photos_dir / "Trip"
+    sub.mkdir()
+    make_jpg(sub / "x.jpg")
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    with db.session() as s:
+        # Full-tree scan first (root catalogue).
+        scanner.scan(s, photos_dir, thumb_dir)
+        # Then a folder-scoped scan of the same folder.
+        scanner.scan(s, sub, thumb_dir, folder="Trip")
+
+    with db.session() as s:
+        photos = s.exec(scanner.select(Photo)).all()
+        assert len(photos) == 1  # no duplicates
+        assert photos[0].folder == "Trip"
+
+
+
 
 def test_scan_idempotent_second_run(db, photos_dir, tmp_path):
     make_jpg(photos_dir / "a.jpg")
