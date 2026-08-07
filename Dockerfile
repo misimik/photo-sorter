@@ -25,10 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY --from=frontend /build/dist ./frontend/dist
 
-# Non-root runtime user (UID 1000:GID 100, matching the host's NAS mount user).
-RUN addgroup -g 100 appuser 2>/dev/null; adduser --uid 1000 --gid 100 --system appuser 2>/dev/null || true
-RUN mkdir -p /data /photos /export && chown -R appuser:appuser /data /photos /export
-USER appuser
+# Directories that bind mounts or volumes will cover. Created so the app can
+# start even if mounts are missing (the app detects and reports errors cleanly).
+# The actual runtime user is set by compose (user: "1000:100").
+RUN mkdir -p /data /photos /export
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
