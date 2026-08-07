@@ -54,6 +54,12 @@ def _seed_two_folders(photos: Path, engine_db: Database) -> None:
     with engine_db.session() as s:
         scanner.scan(s, photos / "A", thumbs, folder="A")
         scanner.scan(s, photos / "B", thumbs, folder="B")
+        # Give them ratings so they appear in rankings.
+        for p in s.exec(select(Photo).where(Photo.folder == "A")):
+            p.rating = 3
+        for p in s.exec(select(Photo).where(Photo.folder == "B")):
+            p.rating = 2
+        s.commit()
         analyze(s, thumbs)
         group(s, folder="A")
         group(s, folder="B")

@@ -373,8 +373,12 @@ async def vote(winner_id: int = Query(...), loser_id: int = Query(...), session:
 
 @router.get("/rankings")
 def rankings(folder: str | None = Query(None), session: Session = Depends(get_db)):
-    """ELO standings for a folder (or all), each with its decile tranche 1-10."""
-    q = select(Photo).where(Photo.is_raw == False)  # noqa: E712
+    """ELO standings for a folder (or all), each with its decile tranche 1-10.
+
+    Only rated photos (rating > 0) are shown — these are the ones that
+    participate in the tournament. Unrated photos with default ELO are excluded.
+    """
+    q = select(Photo).where(Photo.is_raw == False, Photo.rating > 0)  # noqa: E712
     if folder:
         q = q.where(Photo.folder == folder)
     photos = sorted(session.exec(q).all(), key=lambda p: p.elo, reverse=True)

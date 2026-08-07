@@ -216,14 +216,16 @@ export async function getNextPair(folder?: string, minStars = 3): Promise<Tourna
     return { status: "completed", pair: null as unknown as TournamentPair["pair"] };
   }
   const [a, b] = r.photos;
+  // Fetch actual tournament state so the progress bar shows real votes_done / total_votes.
+  const state = await getTournamentStats(folder, minStars);
   return {
     status: "playing",
     pair: {
       photo_a: { ...(await getPhoto(a.id)), elo: a.elo, view_count: a.views },
       photo_b: { ...(await getPhoto(b.id)), elo: b.elo, view_count: b.views },
-      total_photos: 0,
-      total_views: 0,
-      max_views: 4,
+      total_photos: state.total_photos,
+      total_views: state.total_views,
+      max_views: state.max_views * state.total_photos,
     },
   };
 }
