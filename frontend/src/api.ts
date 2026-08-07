@@ -87,6 +87,7 @@ export interface Ranking {
   folder: string;
   stars: number | null;
   is_favorite: number;
+  skipped: boolean;
   rank: number;
   total: number;
   tranche: number;
@@ -272,7 +273,7 @@ export async function getTournamentStats(folder?: string, minStars = 3): Promise
 
 export async function getRankings(folder?: string): Promise<Ranking[]> {
   const q = folder ? `?folder=${encodeURIComponent(folder)}` : "";
-  const rows = await req<Array<{ photo_id: number; elo: number; filename: string; folder: string; stars: number; is_favorite: boolean; tranche: number }>>(`/rankings${q}`);
+  const rows = await req<Array<{ photo_id: number; elo: number; filename: string; folder: string; stars: number; is_favorite: boolean; skipped: boolean; tranche: number }>>(`/rankings${q}`);
   const total = rows.length;
   return rows.map((r, i) => ({
     ...r,
@@ -294,6 +295,10 @@ export async function exportPhotos(cutoffTranche: number, folder?: string): Prom
   if (folder) q.set("folder", folder);
   const r = await req<{ status: string; job_id: number }>(`/export?${q.toString()}`, { method: "POST" });
   return { exported: 0, destination: folder ? `Best/${folder}/` : "Best/", message: r.status };
+}
+
+export async function skipPhoto(id: number, skipped: boolean): Promise<void> {
+  await req(`/photo/${id}/skip?skipped=${skipped}`, { method: "POST" });
 }
 
 export function subscribeProgress(onEvent: (state: ProgressState) => void): () => void {

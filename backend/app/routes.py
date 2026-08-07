@@ -292,10 +292,18 @@ def reject_photo(photo_id: int, rejected: bool = Query(True), session: Session =
     return {"ok": True, "rejected": rejected}
 
 
+@router.post("/photo/{photo_id}/skip")
+def skip_photo(photo_id: int, skipped: bool = Query(True), session: Session = Depends(get_db)):
+    photo = _photo_or_404(session, photo_id)
+    photo.skipped = skipped
+    session.add(photo)
+    session.commit()
+    return {"ok": True, "skipped": skipped}
+
+
 # ---------------------------------------------------------------------------
 # Groups (Stage 2)
 # ---------------------------------------------------------------------------
-
 @router.get("/groups")
 def list_groups(folder: str | None = None, limit: int = 50, offset: int = 0, session: Session = Depends(get_db)):
     q = select(PhotoGroup).order_by(PhotoGroup.start_time)
@@ -392,6 +400,7 @@ def rankings(folder: str | None = Query(None), session: Session = Depends(get_db
             "elo": p.elo,
             "stars": p.rating,
             "is_favorite": p.favorite,
+            "skipped": p.skipped,
             "tranche": min(10, int((i / total) * 10) + 1),
         })
     return out
@@ -399,7 +408,7 @@ def rankings(folder: str | None = Query(None), session: Session = Depends(get_db
 
 @router.get("/export/preview")
 def export_preview(fraction: float = Query(0.3, gt=0, le=1), folder: str | None = Query(None), session: Session = Depends(get_db)):
-    q = select(Photo).where(Photo.is_raw == False)  # noqa: E712
+    q = select(Photo).where(Photo.is_raw == False, Photo.skipped == False)  # noqa: E712
     if folder:
         q = q.where(Photo.folder == folder)
     all_photos = session.exec(q).all()
@@ -416,7 +425,7 @@ def export_preview(fraction: float = Query(0.3, gt=0, le=1), folder: str | None 
 
 @router.post("/export")
 async def start_export(fraction: float = Query(0.3, gt=0, le=1), folder: str | None = Query(None), session: Session = Depends(get_db)):
-    """Launch the export in a background thread; progress via SSE."""
+    """Launch the export in a background thread; progress via SSE. Skipped photos are excluded."""
     from .db import ExportJob, db
 
     job = ExportJob(fraction=fraction, status="pending")

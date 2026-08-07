@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getRankings, exportPhotos, thumbnailUrl } from "../api";
+import { getRankings, exportPhotos, thumbnailUrl, skipPhoto } from "../api";
 import type { Ranking } from "../api";
 
 export default function RankingsPage({ folder }: { folder: string }) {
@@ -11,6 +11,14 @@ export default function RankingsPage({ folder }: { folder: string }) {
   useEffect(() => {
     getRankings(folder || undefined).then(setRankings);
   }, [folder]);
+
+  async function handleSkip(r: Ranking) {
+    const newSkipped = !r.skipped;
+    await skipPhoto(r.photo_id, newSkipped);
+    setRankings((prev) =>
+      prev.map((p) => (p.photo_id === r.photo_id ? { ...p, skipped: newSkipped } : p))
+    );
+  }
 
   if (rankings.length === 0) {
     return (
@@ -131,19 +139,36 @@ export default function RankingsPage({ folder }: { folder: string }) {
                 background: "#1a1a1a",
                 borderRadius: "8px",
                 overflow: "hidden",
-                opacity: included ? 1 : 0.4,
-                border: included ? `2px solid ${trancheColors[r.tranche - 1]}` : "1px solid #333",
+                opacity: included && !r.skipped ? 1 : r.skipped ? 0.3 : 0.4,
+                border: r.skipped ? "1px solid #f44" : included ? `2px solid ${trancheColors[r.tranche - 1]}` : "1px solid #333",
                 display: "flex",
                 flexDirection: "column",
               }}
             >
-              <div style={{ background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1" }}>
+              <div style={{ background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1", position: "relative" }}>
                 <img
                   src={thumbnailUrl(r.photo_id)}
                   alt={r.filename}
                   loading="lazy"
                   style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
                 />
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleSkip(r); }}
+                  style={{
+                    position: "absolute",
+                    bottom: 4,
+                    right: 4,
+                    background: r.skipped ? "#2a7" : "#f44",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "4px",
+                    padding: "2px 8px",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {r.skipped ? "Keep" : "Skip"}
+                </button>
               </div>
               <div style={{ padding: "8px" }}>
                 <div style={{ fontSize: "12px", color: "#aaa", marginBottom: 4 }}>

@@ -69,6 +69,7 @@ class Photo(SQLModel, table=True):
 
     elo: int = 1500
     views: int = 0
+    skipped: bool = False  # user-marked to exclude from export
 
     group_id: int | None = Field(default=None, foreign_key="photogroup.id", index=True)
     analyzed: bool = False
@@ -213,6 +214,7 @@ def migrate_folder_columns(session: Session, photos_dir: Path) -> None:
     _ensure_column(session, "photo", "folder", "folder VARCHAR DEFAULT ''")
     _ensure_column(session, "photogroup", "folder", "folder VARCHAR DEFAULT ''")
     _ensure_column(session, "progress", "folder", "folder VARCHAR DEFAULT ''")
+    _ensure_column(session, "photo", "skipped", "skipped BOOLEAN NOT NULL DEFAULT 0")
     _rebuild_progress_without_unique(session, photos_dir)
     session.commit()
 

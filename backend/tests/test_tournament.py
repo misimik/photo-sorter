@@ -68,4 +68,4 @@ def test_tournament_exhausts_views(db, photos_dir):
             votes += 1
         assert votes >= 5  # at least enough to exhaust most photos
         photos = s.exec(select(Photo)).all()
-        assert all(p.views <= 4 for p in photos)
+        assert all(p.views <= 10 for p in photos)

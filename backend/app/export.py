@@ -42,7 +42,7 @@ def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path
     session.add(job)
     session.commit()
 
-    query = select(Photo).where(Photo.is_raw == False)  # noqa: E712
+    query = select(Photo).where(Photo.is_raw == False, Photo.skipped == False)  # noqa: E712
     if folder:
         query = query.where(Photo.folder == folder)
     all_photos = session.exec(query).all()

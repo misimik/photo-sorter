@@ -67,10 +67,30 @@ def _rated_photo(session: Session, folder: str | None, exclude_ids: set[int], mi
 
 
 def next_pair(session: Session, folder: str | None = None, min_stars: int = 1) -> tuple[Photo, Photo] | None:
-    """Pick two rated photos (in `folder`) that haven't maxed their views."""
+    """Pick two rated photos (in `folder`) that haven't maxed their views.
+
+    Preference: same-group photos pair first so burst/duplicate shots are
+    compared against each other before competing with different scenes.
+    """
     a = _rated_photo(session, folder, set(), min_stars)
     if a is None:
         return None
+
+    # Prefer a photo from the same review group (burst/duplicate matchup).
+    if a.group_id:
+        same_group_query = select(Photo).where(
+            Photo.rating >= min_stars,
+            Photo.views < config.MAX_VIEWS,
+            Photo.group_id == a.group_id,
+            Photo.id != a.id,
+            Photo.rejected == False,  # noqa: E712
+        )
+        same_group_query = _folder_filter(same_group_query, folder)
+        same = session.exec(same_group_query).all()
+        if same:
+            return (a, random.choice(same))
+
+    # Fall back to random pairing.
     b = _rated_photo(session, folder, {a.id}, min_stars)
     if b is None:
         return None
