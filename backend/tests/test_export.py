@@ -20,6 +20,7 @@ def _scan_rated(db, photos_dir, n=4, with_raw=False):
         photos = s.exec(select(Photo).where(Photo.is_raw == False)).all()  # noqa: E712
         for j, p in enumerate(photos):
             p.elo = 1600 - j * 100  # descending, deterministic ranking
+            p.rating = 3  # so they're "rated" (export filters rating > 0)
         s.commit()
         return photos
 
@@ -34,7 +35,7 @@ def test_export_top_fraction(db, photos_dir, tmp_path):
         s.add(job)
         s.commit()
         s.refresh(job)
-        job = run_export(s, job, 0.5, best, photos_dir)
+        job = run_export(s, job, 5, best, photos_dir)  # tranche 5 = top 50%
         assert job.status == "done"
 
     files = list(best.glob("*.jpg"))
@@ -54,16 +55,15 @@ def test_export_skips_existing_idempotent(db, photos_dir, tmp_path):
         s.add(job)
         s.commit()
         s.refresh(job)
-        run_export(s, job, 1.0, best, photos_dir)
+        run_export(s, job, 10, best, photos_dir)  # all 10 tranches
 
     with db.session() as s:
         job = ExportJob(fraction=1.0, status="pending")
         s.add(job)
         s.commit()
         s.refresh(job)
-        job = run_export(s, job, 1.0, best, photos_dir)
+        job = run_export(s, job, 10, best, photos_dir)
         assert job.status == "done"
-    # Same 3 files, no duplicates.
     assert len(list(best.glob("*.jpg"))) == 3
 
 
@@ -77,7 +77,7 @@ def test_export_includes_paired_raw(db, photos_dir, tmp_path):
         s.add(job)
         s.commit()
         s.refresh(job)
-        run_export(s, job, 1.0, best, photos_dir)
+        run_export(s, job, 10, best, photos_dir)
 
     jpgs = list(best.glob("*.jpg"))
     raws = list(best.glob("*.ARW"))

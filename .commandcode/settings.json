@@ -38,7 +38,8 @@
       "Shell(sleep:*)",
       "Shell(del backend\\tmp_exec_test.py 2>nul & echo cleaned)",
       "Shell(curl -s -m 10 \"http://192.168.0.31:8420/api/stats?folder=Kreta%202023.09\")",
-      "Shell(curl -s -m 10 http://192.168.0.31:8420/api/rankings?folder=Kreta%202023.09 -o rankings.json)"
+      "Shell(curl -s -m 10 http://192.168.0.31:8420/api/rankings?folder=Kreta%202023.09 -o rankings.json)",
+      "Shell(git rm --cached backend/rankings.json backend/t1.jpg backend/t2.jpg backend/t3.jpg 2>nul & del backend\\rankings.json backend\\t?.jpg 2>nul & echo cleaned)"
     ],
     "deny": [],
     "defaultMode": "default"

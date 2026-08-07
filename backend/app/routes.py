@@ -408,7 +408,12 @@ def rankings(folder: str | None = Query(None), session: Session = Depends(get_db
 
 @router.get("/export/preview")
 def export_preview(fraction: float = Query(0.3, gt=0, le=1), folder: str | None = Query(None), session: Session = Depends(get_db)):
-    q = select(Photo).where(Photo.is_raw == False, Photo.skipped == False)  # noqa: E712
+    """Count photos that would be exported: all rated (not skipped) above the fraction cutoff."""
+    q = select(Photo).where(
+        Photo.is_raw == False,  # noqa: E712
+        Photo.rating > 0,
+        Photo.skipped == False,  # noqa: E712
+    )
     if folder:
         q = q.where(Photo.folder == folder)
     all_photos = session.exec(q).all()
@@ -425,8 +430,15 @@ def export_preview(fraction: float = Query(0.3, gt=0, le=1), folder: str | None 
 
 @router.post("/export")
 async def start_export(fraction: float = Query(0.3, gt=0, le=1), folder: str | None = Query(None), session: Session = Depends(get_db)):
-    """Launch the export in a background thread; progress via SSE. Skipped photos are excluded."""
+    """Launch export in a background thread; progress via SSE.
+
+    Uses the same tranche-based selection as the Rankings page: all rated
+    (not skipped) photos in the top `fraction` are exported, with paired RAWs.
+    """
     from .db import ExportJob, db
+
+    # Convert fraction (0.3) to the matching tranche (e.g. fraction 0.3 → top 3 tranches).
+    cutoff_tranche = max(1, round(fraction * 10))
 
     job = ExportJob(fraction=fraction, status="pending")
     session.add(job)
@@ -438,7 +450,7 @@ async def start_export(fraction: float = Query(0.3, gt=0, le=1), folder: str | N
     def worker():
         with db.session() as s:
             job_obj = s.get(ExportJob, job.id)
-            export.run_export(s, job_obj, fraction, config.BEST_DIR, config.PHOTOS_DIR, folder=folder)
+            export.run_export(s, job_obj, cutoff_tranche, config.BEST_DIR, config.PHOTOS_DIR, folder=folder)
 
     loop.run_in_executor(None, worker)
     return {"status": "started", "job_id": job.id}

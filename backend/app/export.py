@@ -31,28 +31,38 @@ def _manifest_rows(session: Session, photos: list[Photo]) -> list[str]:
     return lines
 
 
-def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path, photos_dir: Path, folder: str | None = None) -> ExportJob:
-    """Copy the top `fraction` of photos (in `folder`) to Best/<folder>/, with manifest.
+def run_export(session: Session, job: ExportJob, cutoff_tranche: int, best_dir: Path, photos_dir: Path, folder: str | None = None) -> ExportJob:
+    """Copy all photos ranked within the top `cutoff_tranche` tranches.
 
-    Output lands in `best_dir / folder` (or `best_dir` flat when folder is None),
-    preserving relative subpaths, so exports from different folders never collide.
+    Only rated photos (rating > 0) that are not skipped are considered.
+    Photos are sorted by ELO, split into 10 deciles, and all photos in
+    tranche <= cutoff_tranche are exported.
     """
-    job.fraction = fraction
+    job.fraction = cutoff_tranche / 10.0
     job.status = "running"
     session.add(job)
     session.commit()
 
-    query = select(Photo).where(Photo.is_raw == False, Photo.skipped == False)  # noqa: E712
+    query = select(Photo).where(
+        Photo.is_raw == False,  # noqa: E712
+        Photo.skipped == False,  # noqa: E712
+    )
     if folder:
         query = query.where(Photo.folder == folder)
     all_photos = session.exec(query).all()
     ranked = sorted(all_photos, key=lambda p: p.elo, reverse=True)
-    keep_count = max(1, int(len(ranked) * fraction))
-    keep = ranked[:keep_count]
+    total = max(1, len(ranked))
 
-    # Expand each kept JPG to include its paired RAW.
+    # Select all photos in tranches 1..cutoff_tranche.
+    selected: list[Photo] = []
+    for i, p in enumerate(ranked):
+        tranche = min(10, int((i / total) * 10) + 1)
+        if tranche <= cutoff_tranche:
+            selected.append(p)
+
+    # Expand each selected JPG to include its paired RAW.
     to_copy: list[Photo] = []
-    for p in keep:
+    for p in selected:
         to_copy.append(p)
         if p.paired_id:
             raw = session.get(Photo, p.paired_id)
@@ -111,7 +121,7 @@ def run_export(session: Session, job: ExportJob, fraction: float, best_dir: Path
     manifest = dest_root / "manifest.txt"
     tmp = dest_root / "manifest.txt.tmp"
     tmp.parent.mkdir(parents=True, exist_ok=True)
-    tmp.write_text("\n".join(_manifest_rows(session, keep)) + "\n")
+    tmp.write_text("\n".join(_manifest_rows(session, selected)) + "\n")
     os.replace(tmp, manifest)
 
     job.copied = copied
