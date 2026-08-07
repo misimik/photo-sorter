@@ -408,7 +408,9 @@ def rankings(folder: str | None = Query(None), session: Session = Depends(get_db
 
 @router.get("/export/preview")
 def export_preview(fraction: float = Query(0.3, gt=0, le=1), folder: str | None = Query(None), session: Session = Depends(get_db)):
-    """Count photos that would be exported: all rated (not skipped) above the fraction cutoff."""
+    """Count photos that would be exported at this fraction, using the same
+    tranche-based selection as the Rankings page and the export function.
+    Fraction 0.8 = tranches 1-8 (top 80% by decile, not raw count)."""
     q = select(Photo).where(
         Photo.is_raw == False,  # noqa: E712
         Photo.rating > 0,
@@ -418,8 +420,9 @@ def export_preview(fraction: float = Query(0.3, gt=0, le=1), folder: str | None 
         q = q.where(Photo.folder == folder)
     all_photos = session.exec(q).all()
     ranked = sorted(all_photos, key=lambda p: p.elo, reverse=True)
-    keep_count = max(1, int(len(ranked) * fraction))
-    jpgs = ranked[:keep_count]
+    total = max(1, len(ranked))
+    cutoff_tranche = max(1, min(10, round(fraction * 10)))
+    jpgs = [p for i, p in enumerate(ranked) if (min(10, int((i / total) * 10) + 1)) <= cutoff_tranche]
     raws = sum(1 for p in jpgs if p.paired_id and session.get(Photo, p.paired_id).is_raw)
     return {
         "jpg_count": len(jpgs),
