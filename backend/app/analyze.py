@@ -108,71 +108,79 @@ def _time_key(photo: Photo) -> datetime:
 
 
 def cluster(photos: list[Photo]) -> list[list[Photo]]:
-    """Sort chronologically, slice into time windows, cluster by dHash distance."""
+    """Group photos into series + single batches using a connected-components graph.
+
+    For every pair within TIME_WINDOW_SECONDS, an edge is created if both
+    subject (pHash) and a weighted combined score (subject + framing + time)
+    cross their thresholds. Connected components are series; components of
+    size 1 have no similar neighbors and are batched into groups of
+    SINGLE_BATCH_SIZE for review context.
+    """
     if not photos:
         return []
     ordered = sorted(photos, key=_time_key)
-    windows: list[list[Photo]] = []
-    window: list[Photo] = []
-    window_start: datetime | None = None
-    for p in ordered:
-        t = _time_key(p)
-        if window_start is None or (t - window_start).total_seconds() > config.TIME_WINDOW_SECONDS:
-            if window:
-                windows.append(window)
-            window = [p]
-            window_start = t
+    n = len(ordered)
+
+    # Build symmetric adjacency graph.
+    adj: list[list[int]] = [[] for _ in range(n)]
+    for i in range(n):
+        ti = _time_key(ordered[i])
+        for j in range(i + 1, n):
+            tj = _time_key(ordered[j])
+            gap = (tj - ti).total_seconds()
+            if gap > config.TIME_WINDOW_SECONDS:
+                break  # photos are time-sorted; rest are farther
+
+            subject_dist = hamming_distance(ordered[i].phash or "", ordered[j].phash or "")
+            framing_dist = hamming_distance(ordered[i].dhash or "", ordered[j].dhash or "")
+            subject_score = 1.0 - subject_dist / 64.0
+            framing_score = 1.0 - framing_dist / 64.0
+            time_score = 1.0 - gap / config.TIME_WINDOW_SECONDS
+            combined = (
+                subject_score * config.SUBJECT_WEIGHT
+                + framing_score * config.FRAMING_WEIGHT
+                + time_score * config.TIME_WEIGHT
+            )
+            if subject_score >= config.SUBJECT_THRESHOLD and combined >= config.COMBINED_THRESHOLD:
+                adj[i].append(j)
+                adj[j].append(i)
+
+    # Find connected components via BFS.
+    visited = [False] * n
+    components: list[list[Photo]] = []
+    for i in range(n):
+        if visited[i]:
+            continue
+        queue = [i]
+        visited[i] = True
+        component: list[Photo] = []
+        while queue:
+            node = queue.pop(0)
+            component.append(ordered[node])
+            for neighbor in adj[node]:
+                if not visited[neighbor]:
+                    visited[neighbor] = True
+                    queue.append(neighbor)
+        components.append(component)
+
+    # Split into series (size > 1) and singles (size 1).
+    series: list[list[Photo]] = []
+    singles: list[Photo] = []
+    for comp in components:
+        if len(comp) > 1:
+            # Cap at MAX_SERIES_SIZE by splitting on time.
+            sorted_comp = sorted(comp, key=_time_key)
+            for k in range(0, len(sorted_comp), config.MAX_SERIES_SIZE):
+                series.append(sorted_comp[k : k + config.MAX_SERIES_SIZE])
         else:
-            window.append(p)
-    if window:
-        windows.append(window)
+            singles.append(comp[0])
 
-    # Within each window, chain photos whose dHash distance < threshold.
-    groups: list[list[Photo]] = []
-    for win in windows:
-        if len(win) == 1:
-            groups.append(win)
-            continue
-        remaining = list(win)
-        while remaining:
-            seed = remaining.pop(0)
-            group = [seed]
-            for other in list(remaining):
-                if hamming_distance(seed.dhash or "", other.dhash or "") < config.DHASH_DISTANCE:
-                    group.append(other)
-                    remaining.remove(other)
-            groups.append(group)
-    return groups
+    # Batch singles by time into groups of SINGLE_BATCH_SIZE.
+    single_batches: list[list[Photo]] = []
+    for i in range(0, len(singles), config.SINGLE_BATCH_SIZE):
+        single_batches.append(singles[i : i + config.SINGLE_BATCH_SIZE])
 
-
-def _attach_singletons(ordered: list[Photo], groups: list[list[Photo]]) -> list[list[Photo]]:
-    """Merge singletons into the chronologically nearest group.
-
-    To keep review context at ~TARGET_GROUP_SIZE, singles are attached to the
-    nearest group that still has room, preferring groups with more members.
-    """
-    if not groups:
-        return groups
-    # Sort groups chronologically by their first member.
-    grouped = [g for g in groups if len(g) > 1]
-    singles = [g[0] for g in groups if len(g) == 1]
-
-    for s in singles:
-        if not grouped:
-            grouped.append([s])
-            continue
-        # Nearest group with room under the target size; else nearest any.
-        best_roomy = min(
-            (g for g in grouped if len(g) < config.TARGET_GROUP_SIZE),
-            key=lambda g: abs(_time_key(g[0]).timestamp() - _time_key(s).timestamp()),
-            default=None,
-        )
-        best = best_roomy or min(
-            grouped,
-            key=lambda g: abs(_time_key(g[0]).timestamp() - _time_key(s).timestamp()),
-        )
-        best.append(s)
-    return grouped
+    return series + single_batches
 
 
 def group(session: Session, folder: str | None = None) -> int:
@@ -203,7 +211,6 @@ def group(session: Session, folder: str | None = None) -> int:
 
     candidates = [p for p in photos if not p.is_raw and p.analyzed and (not folder or p.folder == folder)]
     clusters = cluster(candidates)
-    clusters = _attach_singletons(sorted(candidates, key=_time_key), clusters)
     set_running(session, "group", len(clusters), folder=folder or "")
 
     created = 0

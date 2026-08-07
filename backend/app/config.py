@@ -20,10 +20,17 @@ JPEG_QUALITY = 85
 SHARPNESS_PERCENTILE = 10.0
 
 # Grouping
-TIME_WINDOW_SECONDS = 5 * 60
-DHASH_DISTANCE = 8
-TARGET_GROUP_SIZE = 4
-MIN_GROUP_SIZE = 2
+# Connected-components graph algorithm using pHash (subject) + dHash (framing)
+# + time proximity. Components of size > 1 are series (capped at MAX_SERIES_SIZE
+# by splitting on time); size-1 components are batched into SINGLE_BATCH_SIZE.
+TIME_WINDOW_SECONDS = 120          # pairwise time gap limit (seconds)
+SUBJECT_WEIGHT = 0.50              # pHash contribution to combined score
+FRAMING_WEIGHT = 0.30              # dHash contribution to combined score
+TIME_WEIGHT = 0.20                 # time-proximity contribution
+SUBJECT_THRESHOLD = 0.45           # minimum subject_score for an edge
+COMBINED_THRESHOLD = 0.68          # minimum combined_score for an edge
+MAX_SERIES_SIZE = 16               # cap per series (split larger components by time)
+SINGLE_BATCH_SIZE = 4              # batch size for non-series photos
 
 # Tournament
 MAX_VIEWS = 4
