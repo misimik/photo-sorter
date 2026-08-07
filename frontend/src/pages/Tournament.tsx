@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+  import { useState, useEffect, useCallback, useRef } from "react";
 import {
   initTournament,
   getNextPair,
@@ -50,14 +50,17 @@ export default function TournamentPage({ folder }: { folder: string }) {
     if (key === "ArrowDown" || key === "d" || key === "D") vote(pair.pair.photo_b.id, pair.pair.photo_a.id);
   }, [pair, vote]);
 
+  const onKeyRef = useRef(onKey);
+  onKeyRef.current = onKey;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
-      onKey(e.key);
+      onKeyRef.current(e.key);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onKey]);
+  }, []);  // stable — attached once, never re-binds
 
   useGamepad(onKey, phase === "playing");
 

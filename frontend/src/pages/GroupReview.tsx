@@ -136,16 +136,22 @@ export default function GroupReviewPage({ folder, onNavigate }: { folder: string
     if (key === "Tab") { focus(focusedIdx + 1); return; }
   }, [zoomedPhoto, group, focusedIdx, currentGroupIdx, groups.length, rate, moveFocus, focus, onNavigate, goToGroup, flush]);
 
+  // Stable keyboard handler — use a ref so the event listener always calls the
+  // latest onKey without re-attaching on every state change (which can drop
+  // keystrokes during re-renders).
+  const onKeyRef = useRef(onKey);
+  onKeyRef.current = onKey;
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Tab", "Enter", " ", "Backspace"].includes(e.key)) {
         e.preventDefault();
       }
-      onKey(e.key);
+      onKeyRef.current(e.key);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onKey]);
+  }, []);  // stable — attached once, never re-binds
 
   useGamepad(onKey, !zoomedPhoto);
 
