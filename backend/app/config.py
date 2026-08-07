@@ -33,7 +33,7 @@ MAX_SERIES_SIZE = 16               # cap per series (split larger components by 
 SINGLE_BATCH_SIZE = 4              # batch size for non-series photos
 
 # Tournament
-MAX_VIEWS = 12  # views per photo (2 views per match = 6 comparisons)
+MAX_VIEWS = 10  # 5 matches per photo (2 views per match)
 ELO_K = 32
 ELO_BASE = 1500
 RATED_ELO = {1: 1000, 2: 1200, 3: 1400, 4: 1600, 5: 1800}
